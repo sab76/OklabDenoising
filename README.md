@@ -13,7 +13,7 @@
 - **`learning_rate`** (Default: 0.0004, Range: 0.00001-0.001)  
   Initial step size for gradient descent
 
-- **`smoothing_strength`** (Default: 0.3, Range: 0.0-0.7)  
+- **`smoothing_strength`** (Default: 0.05, Range: 0.0-1.0)  
   Trade-off between noise removal and detail preservation (0 = original image)
 
 - **`hl_alpha`** (Default: 0.8, Range: 0.1-1.0)  
