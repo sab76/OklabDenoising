@@ -4,22 +4,28 @@ from torch.optim.lr_scheduler import CosineAnnealingLR
 from torch.optim import AdamW
 from .oklab import RGB_to_Oklab, Oklab_to_RGB
 
-def hyper_laplacian_loss(x, alpha=0.5, eps=1e-8):
+@torch.jit.script
+def hyper_laplacian_loss(x: torch.Tensor, alpha: float = 0.9, eps: float = 1e-8) -> torch.Tensor:
     """Hyper-laplacian loss with exponent alpha (0 < alpha <= 1)"""
     # x shape: [batch, height, width, channels]
-    diff_h = torch.abs(x[..., 1:, :, :] - x[..., :-1, :, :])  # Height differences
-    diff_w = torch.abs(x[..., :, 1:, :] - x[..., :, :-1, :])  # Width differences
+    diff_h = torch.abs(x[..., 1:, :, :] - x[..., :-1, :, :])
+    diff_w = torch.abs(x[..., :, 1:, :] - x[..., :, :-1, :])
     
-    # Calculate loss with numerical stability
-    loss_h = torch.mean((diff_h + eps) ** alpha)
-    loss_w = torch.mean((diff_w + eps) ** alpha)
-    
-    return (loss_h + loss_w) / 2
+    if alpha == 1.0:
+        return (diff_h.mean() + diff_w.mean()) / 2
+    else:
+        return (((diff_h + eps) ** alpha).mean() + ((diff_w + eps) ** alpha).mean()) / 2
 
-def denoise(image, iterations, learning_rate, smoothing_strength, 
-            hl_alpha, l_weight, ab_weight, patience=50):
+def denoise(image, iterations, learning_rate, smoothing_strength,
+            hl_alpha, l_weight, ab_weight):
+    if torch.cuda.is_available() and 'cpu' in str(image.device):
+        print("Moving input tensor from CPU to GPU...")
+        image = image.to('cuda')
+    
+    device = image.device
+    print(f"Running on device: {device}")
+    
     with torch.inference_mode(False):
-        device = image.device
         original_oklab = RGB_to_Oklab(image.to(device))
         
         # Clone and detach for optimization
@@ -28,7 +34,7 @@ def denoise(image, iterations, learning_rate, smoothing_strength,
         # Use fused AdamW for faster optimization
         optimizer = AdamW([denoised_oklab], 
                          lr=learning_rate, 
-                         betas=(0.9, 0.99),
+                         betas=(0.9, 0.999),
                          fused=True if 'cuda' in device.type else False)
         
         scheduler = CosineAnnealingLR(optimizer, T_max=iterations, 
